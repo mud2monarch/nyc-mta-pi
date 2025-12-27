@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse
-from etl import Station, get_next_arrivals, minutes_until_arrivals
+from src.etl import Station, get_next_arrivals, minutes_until_arrivals
 
 app = FastAPI(title="NYC MTA Train Arrivals API")
 

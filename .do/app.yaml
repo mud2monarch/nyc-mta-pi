@@ -3,14 +3,15 @@ region: nyc
 
 services:
   - name: api
-    # Build from Dockerfile
-    dockerfile_path: Dockerfile
+    # Build from source
+    github:
+      repo: mud2monarch/nyc-mta-pi
+      branch: main
+      deploy_on_push: true
 
-    # Or build from source (simpler, no Docker needed)
-    # github:
-    #   repo: your-username/nyc_mta
-    #   branch: main
-    #   deploy_on_push: true
+    # Build configuration
+    build_command: curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.local/bin/env && uv sync
+    run_command: $HOME/.local/bin/uv run uvicorn src.api:app --host 0.0.0.0 --port 8080
 
     # Instance size (basic = $5/month)
     instance_count: 1
