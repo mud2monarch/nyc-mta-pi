@@ -3,14 +3,13 @@ region: nyc
 
 services:
   - name: api
-    # Build from source
+    # Build from Dockerfile
     github:
       repo: mud2monarch/nyc-mta-pi
       branch: main
       deploy_on_push: true
 
-    # Build configuration (DO auto-installs uv and runs uv sync)
-    run_command: python -m uvicorn src.api:app --host 0.0.0.0 --port 8080
+    dockerfile_path: Dockerfile
 
     # Instance size (basic = $5/month)
     instance_count: 1
