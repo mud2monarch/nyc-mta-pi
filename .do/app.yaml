@@ -9,9 +9,9 @@ services:
       branch: main
       deploy_on_push: true
 
-    # Build configuration
-    build_command: curl -LsSf https://astral.sh/uv/install.sh | sh && source $HOME/.local/bin/env && uv sync
-    run_command: $HOME/.local/bin/uv run uvicorn src.api:app --host 0.0.0.0 --port 8080
+    # Build configuration (DO auto-installs uv and runs uv sync)
+    build_command: uv sync
+    run_command: python -m uvicorn src.api:app --host 0.0.0.0 --port 8080
 
     # Instance size (basic = $5/month)
     instance_count: 1
