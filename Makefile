@@ -2,7 +2,7 @@
 SERVICE := nyc-mta-api
 
 # Common targets
-.PHONY: install dev run lint deploy
+.PHONY: install dev run lint deploy docker-build docker-run
 
 install:
 	uv sync
@@ -24,3 +24,10 @@ deploy:
 		exit 1; \
 	fi
 	doctl apps create --spec .do/app.yaml
+
+# Docker targets
+docker-build:
+	docker build -t $(SERVICE) .
+
+docker-run:
+	docker run -p 8080:8080 $(SERVICE)
