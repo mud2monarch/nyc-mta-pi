@@ -1,9 +1,24 @@
+import time
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from src.etl import Station, get_next_arrivals, minutes_until_arrivals
-from src.alta_parking import check_parking_availability, get_availability_calendar
+from src.alta_parking import check_parking_availability, init_browser, close_browser
 
-app = FastAPI(title="NYC MTA Train Arrivals API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage browser lifecycle."""
+    await init_browser()
+    yield
+    await close_browser()
+
+
+app = FastAPI(title="NYC MTA Train Arrivals API", lifespan=lifespan)
+
+# Simple cache: {date: (timestamp, result)}
+_parking_cache: dict[str, tuple[float, dict]] = {}
+CACHE_TTL_SECONDS = 60
 
 
 @app.get("/arrivals")
@@ -65,7 +80,6 @@ def root():
         "endpoints": {
             "/arrivals": "Get train arrival times for a station",
             "/parking": "Check Alta parking availability for a date",
-            "/parking/calendar": "Get full Alta parking availability calendar",
             "/docs": "Interactive API documentation"
         },
         "available_stations": [s.name.lower() for s in Station]
@@ -78,6 +92,7 @@ async def get_parking_availability(
 ):
     """
     Check parking availability at Alta Ski Area for a specific date.
+    Results are cached for 60 seconds.
 
     Args:
         date: Date string in YYYY-MM-DD format
@@ -95,6 +110,14 @@ async def get_parking_availability(
             detail=f"Invalid date format '{date}'. Use YYYY-MM-DD format (e.g., 2025-01-15)"
         )
 
+    # Check cache
+    now = time.time()
+    if date in _parking_cache:
+        cached_time, cached_result = _parking_cache[date]
+        if now - cached_time < CACHE_TTL_SECONDS:
+            return {**cached_result, "cached": True}
+
+    # Fetch fresh result
     result = await check_parking_availability(date)
 
     if result.get("error"):
@@ -103,23 +126,7 @@ async def get_parking_availability(
             detail=f"Error checking availability: {result['error']}"
         )
 
-    return result
+    # Cache the result
+    _parking_cache[date] = (now, result)
 
-
-@app.get("/parking/calendar")
-async def get_parking_calendar():
-    """
-    Get the full parking availability calendar for Alta Ski Area.
-
-    Returns:
-        JSON object with availability status for each date in the calendar
-    """
-    result = await get_availability_calendar()
-
-    if result.get("error"):
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching calendar: {result['error']}"
-        )
-
-    return result
+    return {**result, "cached": False}
