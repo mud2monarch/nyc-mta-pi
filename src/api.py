@@ -1,30 +1,21 @@
-import time
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from src.etl import Station, get_next_arrivals, minutes_until_arrivals
-from src.alta_parking import check_parking_availability, init_browser, close_browser
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Manage browser lifecycle."""
-    await init_browser()
-    yield
-    await close_browser()
-
-
-app = FastAPI(title="NYC MTA Train Arrivals API", lifespan=lifespan)
-
-# Simple cache: {date: (timestamp, result)}
-_parking_cache: dict[str, tuple[float, dict]] = {}
-CACHE_TTL_SECONDS = 60
+app = FastAPI(title="NYC MTA Train Arrivals API")
 
 
 @app.get("/arrivals")
 def get_arrivals(
-    station: str = Query(..., description="Station name in lowercase with underscores (e.g., canal_st_southbound)"),
-    config: str = Query("full", description="Response format: 'full' (JSON) or 'short' (plain text with top 3 minutes)")
+    station: str = Query(
+        ...,
+        description="Station name in lowercase with underscores (e.g., canal_st_southbound)",
+    ),
+    config: str = Query(
+        "full",
+        description="Response format: 'full' (JSON) or 'short' (plain text with top 3 minutes)",
+    ),
 ):
     """
     Get the next train arrival times for a specified station.
@@ -34,7 +25,7 @@ def get_arrivals(
         config: Response format - "full" returns JSON, "short" returns plain text with top 3 minutes
 
     Returns:
-        JSON object with arrival times and minutes until arrival (config=full)
+        JSON object with train lines, arrival times, and minutes until arrival (config=full)
         Plain text string with top 3 minutes separated by spaces (config=short)
     """
     # Convert station string to enum format (e.g., "canal_st_southbound" -> "CANAL_ST_SOUTHBOUND")
@@ -50,8 +41,8 @@ def get_arrivals(
         )
 
     # Get arrival data
-    arrival_times = get_next_arrivals(station_enum)
-    minutes = minutes_until_arrivals(arrival_times)
+    arrivals = get_next_arrivals(station_enum)
+    minutes = minutes_until_arrivals(arrivals)
 
     # Handle short format
     if config == "short":
@@ -61,13 +52,14 @@ def get_arrivals(
     # Handle full format (default)
     return {
         "station": station,
-        "count": len(arrival_times),
+        "count": len(arrivals),
         "arrivals": [
             {
-                "arrival_time": arrival_time.isoformat(),
+                "line": arrival.line,
+                "arrival_time": arrival.arrival_time.isoformat(),
                 "minutes_until_arrival": mins
             }
-            for arrival_time, mins in zip(arrival_times, minutes)
+            for arrival, mins in zip(arrivals, minutes)
         ]
     }
 
@@ -79,54 +71,7 @@ def root():
         "message": "NYC MTA Train Arrivals API",
         "endpoints": {
             "/arrivals": "Get train arrival times for a station",
-            "/parking": "Check Alta parking availability for a date",
             "/docs": "Interactive API documentation"
         },
         "available_stations": [s.name.lower() for s in Station]
     }
-
-
-@app.get("/parking")
-async def get_parking_availability(
-    date: str = Query(..., description="Date to check in YYYY-MM-DD format (e.g., 2025-01-15)")
-):
-    """
-    Check parking availability at Alta Ski Area for a specific date.
-    Results are cached for 60 seconds.
-
-    Args:
-        date: Date string in YYYY-MM-DD format
-
-    Returns:
-        JSON object with availability status and rate information
-    """
-    # Validate date format
-    try:
-        from datetime import datetime
-        datetime.strptime(date, "%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid date format '{date}'. Use YYYY-MM-DD format (e.g., 2025-01-15)"
-        )
-
-    # Check cache
-    now = time.time()
-    if date in _parking_cache:
-        cached_time, cached_result = _parking_cache[date]
-        if now - cached_time < CACHE_TTL_SECONDS:
-            return {**cached_result, "cached": True}
-
-    # Fetch fresh result
-    result = await check_parking_availability(date)
-
-    if result.get("error"):
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error checking availability: {result['error']}"
-        )
-
-    # Cache the result
-    _parking_cache[date] = (now, result)
-
-    return {**result, "cached": False}
